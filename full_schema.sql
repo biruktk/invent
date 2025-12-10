@@ -1,106 +1,73 @@
-CREATE TABLE cust (
+-- Normalized schema for Invent (SQLite)
+PRAGMA foreign_keys = ON;
+
+BEGIN TRANSACTION;
+
+-- Roles table to normalize permissions
+CREATE TABLE IF NOT EXISTS roles (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT UNIQUE NOT NULL,
-    phone TEXT UNIQUE NOT NULL,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    name TEXT NOT NULL UNIQUE,
+    description TEXT
 );
-CREATE TABLE users (
+
+-- Users table
+CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    username TEXT NOT NULL,
+    username TEXT NOT NULL UNIQUE,
     email TEXT NOT NULL UNIQUE,
-    pstatus TEXT DEFAULT 'inactive',
     password_hash TEXT NOT NULL,
-    txn TEXT,
-    pkg TEXT,
-    company_id INTEGER,
-    role TEXT NOT NULL DEFAULT 'employee',
-    created_at TEXT NOT NULL DEFAULT (datetime('now')), permissions TEXT DEFAULT '[]',
-    FOREIGN KEY (company_id) REFERENCES companies(id) ON DELETE CASCADE
+    role_id INTEGER REFERENCES roles(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL,
+    updated_at TEXT,
+    CHECK(username <> ''),
+    CHECK(email <> '')
 );
 
+-- Categories for items
+CREATE TABLE IF NOT EXISTS categories (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT
+);
 
-CREATE TABLE companies (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        owner_id INTEGER,
-        created_at TEXT NOT NULL DEFAULT (datetime('now')),
-        FOREIGN KEY (owner_id) REFERENCES users(id) ON DELETE CASCADE
-    );
-CREATE TABLE items (
+-- Items table
+CREATE TABLE IF NOT EXISTS items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
+    sku TEXT UNIQUE,
     name TEXT NOT NULL,
-    brand_name TEXT,
-    item_number TEXT,
-    qty INTEGER NOT NULL CHECK(qty >= 0),
-    price_cents INTEGER NOT NULL CHECK(price_cents >= 0),
-    tax_pct REAL NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    user_id INTEGER NOT NULL
-, image_path TEXT);
-CREATE TABLE purchases (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  item_id INTEGER NOT NULL REFERENCES items(id) ON DELETE CASCADE,
-  item_name TEXT NOT NULL,
-  brand_name TEXT,
-  item_number TEXT,
-  qty INTEGER NOT NULL,
-  price_cents INTEGER NOT NULL,
-  tax_pct REAL NOT NULL DEFAULT 0,
-  -- payment type: 'cash', 'credit', 'bank', 'prepaid'
-  payment_type TEXT NOT NULL CHECK (payment_type IN ('cash','credit','bank','prepaid')),
-  -- for bank payments
-  bank_id INTEGER REFERENCES banks(id)  DEFAULT NULL,
-  -- for credit purchases
-  due_date TEXT,
-  -- for prepaid purchases
-  prepaid_min_cents INTEGER CHECK (prepaid_min_cents >= 0),
-  date TEXT NOT NULL DEFAULT (date('now')),
-  total_cents INTEGER NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    user_id INTEGER NOT NULL
-    ,ids TEXT
-, status TEXT DEFAULT 'paid');
-CREATE TABLE sales (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  item_id INTEGER REFERENCES items(id) ON DELETE SET NULL,
-  item_name TEXT NOT NULL,
-  qty INTEGER NOT NULL,
-  price_cents INTEGER NOT NULL,
-  tax_pct REAL NOT NULL DEFAULT 0,
-  payment_method TEXT NOT NULL CHECK(payment_method IN ('Paid','Pre-paid','Credit')),
-  paid_via TEXT, -- 'bank' or 'cash' (updated when payment is made)
-  bank_id INTEGER REFERENCES banks(id) ON DELETE SET NULL,
-  prepayment_cents INTEGER DEFAULT 0, -- only for Pre-paid
-  due_date TEXT, -- for Pre-paid and Credit
-  date TEXT NOT NULL DEFAULT (date('now')),
-  total_cents INTEGER NOT NULL,
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    user_id INTEGER NOT NULL ,
-    ids TEXT ,
-    username TEXT,
-    phone TEXT,
-    status TEXT DEFAULT 'pending'
-, item_number TEXT);
-CREATE TABLE misc (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  name TEXT NOT NULL,
-  reason TEXT,
-  amount_cents INTEGER NOT NULL,
-  bank_id INTEGER NOT NULL REFERENCES banks(id) ON DELETE RESTRICT,
-  date TEXT NOT NULL DEFAULT (date('now')),
-  created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    user_id INTEGER NOT NULL
+    description TEXT,
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
+    quantity INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
 );
-CREATE TABLE banks (
+
+-- Audits: changes to items (normalized history)
+CREATE TABLE IF NOT EXISTS audits (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    balance_cents INTEGER NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    user_id INTEGER NOT NULL
+    item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    delta TEXT,
+    created_at TEXT NOT NULL
 );
-CREATE INDEX idx_banks_user ON banks(user_id);
-CREATE INDEX idx_items_user ON items(user_id);
-CREATE INDEX idx_purchases_user ON purchases(user_id);
-CREATE INDEX idx_sales_user ON sales(user_id);
-CREATE INDEX idx_misc_user ON misc(user_id);
-/* No STAT tables available */
+
+-- Optional attachments or files metadata
+CREATE TABLE IF NOT EXISTS attachments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    item_id INTEGER REFERENCES items(id) ON DELETE CASCADE,
+    filename TEXT NOT NULL,
+    mime TEXT,
+    created_at TEXT NOT NULL
+);
+
+-- Indexes
+CREATE INDEX IF NOT EXISTS idx_items_category ON items(category_id);
+CREATE INDEX IF NOT EXISTS idx_audits_item ON audits(item_id);
+CREATE INDEX IF NOT EXISTS idx_audits_user ON audits(user_id);
+
+-- Seed roles
+INSERT OR IGNORE INTO roles (id, name, description) VALUES (1, 'admin', 'Administrator with full access');
+INSERT OR IGNORE INTO roles (id, name, description) VALUES (2, 'user', 'Standard user');
+
+COMMIT;

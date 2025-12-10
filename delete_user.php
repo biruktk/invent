@@ -1,44 +1,23 @@
 <?php
-require 'bootstrap.php';
-
-// Only admins can delete employees
-if ($_SESSION['role'] !== 'admin') {
-    header("Location: pro.php?error=access_denied");
+require_once __DIR__ . '/index.php';
+require_admin();
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    http_response_code(405);
+    echo 'Method not allowed.';
     exit;
 }
-
-// Get user ID
-$id = isset($_GET['id']) ? intval($_GET['id']) : 0;
-if ($id <= 0) {
-    header("Location: pro.php?error=invalid_id");
+$id = isset($_POST['id']) ? (int)$_POST['id'] : 0;
+$token = $_POST['_csrf'] ?? '';
+if (!verify_csrf_token($token)) {
+    http_response_code(400);
+    echo 'Invalid CSRF token.';
     exit;
 }
-
-// Don't allow deleting the logged-in admin
-if ($id === $_SESSION['user_id']) {
-    header("Location: pro.php?error=cannot_delete_self");
-    exit;
+if ($id <= 0) { http_response_code(400); echo 'Invalid id.'; exit; }
+if (delete_user_by_id($id)) {
+    flash_set('success', 'User deleted.');
+} else {
+    flash_set('error', 'Unable to delete user.');
 }
-
-// Check if user belongs to the same company
-$stmt = $pdo->prepare("SELECT id, role FROM users WHERE id = ? AND company_id = ?");
-$stmt->execute([$id, $_SESSION['company_id']]);
-$user = $stmt->fetch(PDO::FETCH_ASSOC);
-
-if (!$user) {
-    header("Location: pro.php?error=user_not_found");
-    exit;
-}
-
-// Don't allow deleting other admins
-if ($user['role'] === 'admin') {
-    header("Location: pro.php?error=cannot_delete_admin");
-    exit;
-}
-
-// Delete the user
-$pdo->prepare("DELETE FROM users WHERE id = ?")->execute([$id]);
-
-// Redirect back
-header("Location: pro.php?success=deleted");
+header('Location: /a/index.php');
 exit;
